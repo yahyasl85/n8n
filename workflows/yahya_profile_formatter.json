@@ -1,0 +1,80 @@
+{
+  "name": "Yahya Ahmed — Profile Data & Formatter",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "id": "ba000001-0000-0000-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Master profile data store for Yahya Ahmed\n// Edit this node to keep your profile current across all connected workflows\n\nreturn [{\n  json: {\n    personal: {\n      name: \"Yahya Ahmed\",\n      location: \"Nairobi, Kenya\",\n      focus: \"Data Science, Machine Learning, Business Automation, & Agribusiness\",\n      languages: [\"English (Professional)\", \"Arabic (Professional)\"]\n    },\n\n    summary: \"An AI Engineer and Machine Learning Specialist with over nine years of professional experience spanning enterprise automation, data analytics, and geostrategic economic research. Expert at taking complex data structures and turning them into production-grade automated solutions. Currently bridging the gap between advanced data science and on-the-ground business transformation, with active ventures in AI consultancy and precision agribusiness in East Africa.\",\n\n    skills: {\n      ai_automation: [\n        \"Production workflow automation & live data integration pipelines (n8n)\",\n        \"Multi-agent AI orchestration & autonomous agent-to-agent task delegation\",\n        \"Generative AI ecosystems — Vertex AI, multimodal embeddings, long-context reasoning\",\n        \"Lead generation frameworks, intelligent customer routing, automated ROI engines\"\n      ],\n      data_science_ml: [\n        \"Predictive modeling, statistical forecasting, multi-variable regression\",\n        \"Unsupervised learning — K-Means clustering, anomaly detection, customer segmentation\",\n        \"Data parsing, dataset validation, EDA\",\n        \"Matrix operations, linear algebra, symbolic mathematics (NumPy, SymPy), probability distributions\"\n      ],\n      tech_stack: [\n        \"Python (NumPy, SymPy)\",\n        \"SQL — relational database design & complex query optimization\",\n        \"Google Cloud Platform (GCP) — scalable data pipelines & data warehouse\",\n        \"GitHub — version control, modular architecture, CI/CD\"\n      ],\n      domain: [\n        \"Geostrategy & trade logistics — East Africa & Sahel regional trade corridors\",\n        \"Maritime infrastructure development & cross-border supply chain logistics\",\n        \"Agricultural biotechnology — agronomic trends, crop ecology, high-yielding seed distribution\"\n      ]\n    },\n\n    experience: [\n      {\n        title: \"Founder & Principal Consultant\",\n        company: \"YSL Solutions\",\n        type: \"AI Business Automation Consultancy\",\n        start: \"2026-01\",\n        end: null,\n        current: true,\n        highlights: [\n          \"Operate a global AI business automation consultancy specializing in intelligent workflow design for digital transformation\",\n          \"Deploy production-grade automated engines that reduce operational overhead and scale lead generation for international clients\"\n        ]\n      },\n      {\n        title: \"Agribusiness Entrepreneur\",\n        company: \"Seed Distribution Venture\",\n        type: \"Agribusiness\",\n        location: \"Nairobi, Kenya\",\n        start: \"2026\",\n        end: null,\n        current: true,\n        highlights: [\n          \"Formulating data-driven market strategies for high-yielding seed distribution in Kenya\",\n          \"Applying agricultural biotechnology expertise to optimize supply chains and increase farmer access to high-performance inputs\"\n        ]\n      },\n      {\n        title: \"Economic Researcher\",\n        company: \"United Nations Economic Commission for Africa\",\n        type: \"Research\",\n        start: null,\n        end: null,\n        current: false,\n        highlights: [\n          \"Conducted macro-analytical research on regional trade corridors, maritime infrastructure, and cross-border logistics\",\n          \"Synthesized geostatistical datasets into actionable economic policy insights for East Africa\"\n        ]\n      }\n    ],\n\n    education: [\n      {\n        degree: \"Master of Data Science (Candidate)\",\n        institution: \"University of Pittsburgh\",\n        focus: [\"Large Language Models (LLMs)\", \"Data Visualization\"],\n        achievement: \"98% performance metric in core data-centric computing sequences\",\n        status: \"In Progress\"\n      },\n      {\n        degree: \"B.S. in Agricultural Biotechnology & Agroecology\",\n        institution: \"Virginia Tech\",\n        status: \"Completed\"\n      }\n    ],\n\n    certifications: [\n      {\n        name: \"Google Cloud Professional Data Engineer\",\n        issuer: \"Google\",\n        short: \"GCP\"\n      },\n      {\n        name: \"IABAC Certified Data Scientist & AI Expert\",\n        issuer: \"IABAC\",\n        short: \"IABAC DS/AI\"\n      }\n    ],\n\n    tools: [\n      \"Google Colab\",\n      \"Jupyter Notebooks\",\n      \"GitHub\",\n      \"n8n\",\n      \"Vertex AI\",\n      \"Google Cloud Platform\"\n    ]\n  }\n}];"
+      },
+      "name": "Profile Data Store",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400],
+      "id": "ba000002-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\n\n// --- LinkedIn About Section (2,600 char limit) ---\nconst certLine = p.certifications.map(c => c.name).join(' | ');\nconst techLine = p.skills.tech_stack.join(' · ');\n\nconst about = `${p.summary}\n\n🛠️ What I Build\n${ p.skills.ai_automation.map(s => '▸ ' + s).join('\\n') }\n\n📊 Data Science & ML\n${ p.skills.data_science_ml.map(s => '▸ ' + s).join('\\n') }\n\n💻 Tech Stack\n${ techLine }\n\n🎓 Credentials\n${ p.education.map(e => `${e.degree} — ${e.institution}`).join('\\n') }\n${ certLine }\n\n🌍 Based in ${p.personal.location} | Open to global collaborations`;\n\nreturn [{\n  json: {\n    output_type: 'linkedin_about',\n    character_count: about.length,\n    within_limit: about.length <= 2600,\n    text: about\n  }\n}];"
+      },
+      "name": "Format: LinkedIn About",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 240],
+      "id": "ba000003-0000-0000-0000-000000000003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\n\n// --- Structured Resume JSON (API / ATS ready) ---\nconst resume = {\n  meta: {\n    format: \"resume_v1\",\n    generated_at: new Date().toISOString(),\n    name: p.personal.name\n  },\n  contact: {\n    name: p.personal.name,\n    location: p.personal.location,\n    languages: p.personal.languages\n  },\n  summary: p.summary,\n  experience: p.experience.map(e => ({\n    title: e.title,\n    company: e.company,\n    period: e.current ? `${e.start} – Present` : `${e.start || 'N/A'} – ${e.end || 'N/A'}`,\n    location: e.location || null,\n    bullets: e.highlights\n  })),\n  education: p.education.map(e => ({\n    degree: e.degree,\n    institution: e.institution,\n    status: e.status,\n    notes: e.focus ? `Focus: ${e.focus.join(', ')}` : (e.achievement || null)\n  })),\n  certifications: p.certifications.map(c => `${c.name} (${c.issuer})`),\n  skills: {\n    ai_automation: p.skills.ai_automation,\n    data_science_ml: p.skills.data_science_ml,\n    tech_stack: p.skills.tech_stack,\n    domain_expertise: p.skills.domain\n  },\n  tools: p.tools\n};\n\nreturn [{\n  json: {\n    output_type: 'structured_resume',\n    resume\n  }\n}];"
+      },
+      "name": "Format: Resume JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 560],
+      "id": "ba000004-0000-0000-0000-000000000004"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Profile Data Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Profile Data Store": {
+      "main": [
+        [
+          {
+            "node": "Format: LinkedIn About",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Format: Resume JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["linkedin", "profile", "resume", "yahya"],
+  "meta": {
+    "description": "Master profile data store for Yahya Ahmed. The Profile Data Store node holds all structured profile data (personal info, summary, skills, experience, education, certifications). Two parallel formatter nodes produce: (1) a LinkedIn About section (2600-char limit aware) and (2) an ATS-ready structured resume JSON. Connect additional output nodes (Google Sheets, email, PDF, webhooks) downstream from either formatter."
+  }
+}
