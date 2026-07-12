@@ -1,0 +1,258 @@
+{
+  "name": "UN Jobs Extractor — Inspira + unjobs.org",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 400],
+      "id": "un000001-0000-0000-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keywords to search across all UN portals\n// Adjust these to match the exact roles you want\nconst searchTerms = [\n  { keywords: 'data science',           portal: 'both' },\n  { keywords: 'machine learning',       portal: 'both' },\n  { keywords: 'data analyst',           portal: 'both' },\n  { keywords: 'information management', portal: 'both' },\n  { keywords: 'statistics',             portal: 'inspira' }\n];\n\nreturn searchTerms.map(s => ({ json: s }));"
+      },
+      "name": "Search Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 400],
+      "id": "un000002-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  { "leftValue": "={{ $json.portal }}", "rightValue": "inspira", "operator": { "type": "string", "operation": "notEquals" } }
+                ]
+              },
+              "output": 0
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  { "leftValue": "={{ $json.portal }}", "rightValue": "unjobs", "operator": { "type": "string", "operation": "notEquals" } }
+                ]
+              },
+              "output": 1
+            }
+          ],
+          "fallbackOutput": "none"
+        }
+      },
+      "name": "Portal Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [640, 400],
+      "id": "un000003-0000-0000-0000-000000000003"
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://inspira.un.org/psc/PUNA1J/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_APP_SCHJOB.GBL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent",      "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            { "name": "Accept",          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+            { "name": "Accept-Language", "value": "en-US,en;q=0.5" },
+            { "name": "Connection",      "value": "keep-alive" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "Page",   "value": "HRS_APP_SCHJOB" },
+            { "name": "Action", "value": "U" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "text" } },
+          "redirect": { "redirect": { "followRedirects": true, "maxRedirects": 5 } }
+        }
+      },
+      "name": "Get Inspira Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 240],
+      "id": "un000004-0000-0000-0000-000000000004"
+    },
+    {
+      "parameters": {
+        "jsCode": "// PeopleSoft requires extracting the session token (ICSID) and state number\n// from the initial page HTML before any search POST will be accepted\nconst html     = $input.item.json.data || '';\nconst keywords = $('Search Keywords').item.json.keywords;\n\n// Extract ICSID — hidden input field PeopleSoft embeds on every page\nconst icsidMatch   = html.match(/name=[\"']ICSID[\"'][^>]*value=[\"']([^\"']+)[\"']/) ||\n                     html.match(/value=[\"']([^\"']+)[\"'][^>]*name=[\"']ICSID[\"']/);\nconst icsid        = icsidMatch ? icsidMatch[1] : '';\n\n// Extract ICStateNum — increments with each page interaction\nconst stateMatch   = html.match(/name=[\"']ICStateNum[\"'][^>]*value=[\"'](\\d+)[\"']/) ||\n                     html.match(/value=[\"'](\\d+)[\"'][^>]*name=[\"']ICStateNum[\"']/);\nconst icStateNum   = stateMatch ? stateMatch[1] : '1';\n\n// Extract any PT_SELECTOR_BTN or similar tokens (varies by PeopleSoft version)\nconst selectorMatch = html.match(/name=[\"']PT_SELECTOR_BTN[\"'][^>]*value=[\"']([^\"']*)[\"']/);\nconst selectorBtn   = selectorMatch ? selectorMatch[1] : '';\n\nif (!icsid) {\n  // Session extraction failed — Inspira may require login or has changed its structure\n  return [{ json: {\n    error: 'ICSID not found — Inspira may require authentication or the page structure changed.',\n    html_snippet: html.slice(0, 500),\n    keywords\n  }}];\n}\n\nreturn [{ json: { icsid, icStateNum, selectorBtn, keywords } }];"
+      },
+      "name": "Extract Inspira Session Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 240],
+      "id": "un000005-0000-0000-0000-000000000005"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://inspira.un.org/psc/PUNA1J/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_APP_SCHJOB.GBL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent",    "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            { "name": "Content-Type",  "value": "application/x-www-form-urlencoded" },
+            { "name": "Accept",        "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+            { "name": "Referer",       "value": "https://inspira.un.org/psc/PUNA1J/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_APP_SCHJOB.GBL?Page=HRS_APP_SCHJOB&Action=U" },
+            { "name": "Origin",        "value": "https://inspira.un.org" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "ICAction",    "value": "HRS_CE_ILJ_I_GBL$ICSearch" },
+            { "name": "ICType",      "value": "Panel" },
+            { "name": "ICSID",       "value": "={{ $json.icsid }}" },
+            { "name": "ICStateNum",  "value": "={{ $json.icStateNum }}" },
+            { "name": "ICXPos",      "value": "0" },
+            { "name": "ICYPos",      "value": "0" },
+            { "name": "ICResubmit",  "value": "0" },
+            { "name": "ICAJAX",      "value": "0" },
+            { "name": "ICFind",      "value": "" },
+            { "name": "ICAddCount",  "value": "" },
+            { "name": "HRS_CE_ILJ_I_GBL_HRS_KW_SRCH_I",        "value": "={{ $json.keywords }}" },
+            { "name": "HRS_CE_ILJ_I_GBL_HRS_LOCATION_SRCH",     "value": "" },
+            { "name": "HRS_CE_ILJ_I_GBL_HRS_POSTING_TITLE",     "value": "" },
+            { "name": "HRS_CE_ILJ_I_GBL_HRS_ORG_NAME_SRCH",     "value": "" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "text" } }
+        }
+      },
+      "name": "Search Inspira Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 240],
+      "id": "un000006-0000-0000-0000-000000000006"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse PeopleSoft HRS job search results page\n// PeopleSoft renders jobs in a grid with predictable ID patterns:\n//   HRS_CE_ILJ_I_GBL_HRS_POSITION_TITLE_I$0  ← job title (row 0)\n//   HRS_CE_ILJ_I_GBL_HRS_POSITION_TITLE_I$1  ← row 1 etc.\nconst html     = $input.item.json.data || '';\nconst keywords = $('Extract Inspira Session Token').item.json.keywords;\nconst jobs     = [];\n\n// Pattern 1: PeopleSoft field IDs for title (standard HRS component)\nconst titlePattern = /id=\"HRS_CE_ILJ_I_GBL_HRS_POSITION_TITLE_I\\$(\\d+)\"[^>]*>([^<]+)<\\/a>/g;\nlet m;\nwhile ((m = titlePattern.exec(html)) !== null) {\n  const rowIdx = m[1];\n  const title  = m[2].trim();\n\n  // Extract matching row fields using the same row index\n  const deptRx   = new RegExp(`id=\"HRS_CE_ILJ_I_GBL_HRS_ORG_NAME_SRCH\\\\$${rowIdx}\"[^>]*>([^<]+)<`);\n  const locRx    = new RegExp(`id=\"HRS_CE_ILJ_I_GBL_DERIVE_LOC_DESCR\\\\$${rowIdx}\"[^>]*>([^<]+)<`);\n  const dateRx   = new RegExp(`id=\"HRS_CE_ILJ_I_GBL_HRS_JO_POSTED_DT\\\\$${rowIdx}\"[^>]*>([^<]+)<`);\n  const jobIdRx  = new RegExp(`id=\"HRS_CE_ILJ_I_GBL_HRS_JO_REQ_NO_I\\\\$${rowIdx}\"[^>]*>([^<]+)<`);\n  const linkRx   = new RegExp(`id=\"HRS_CE_ILJ_I_GBL_HRS_POSITION_TITLE_I\\\\$${rowIdx}\"\\\\s+href=\"([^\"]+)\"`);\n\n  const dept     = (html.match(deptRx)  || [])[1]?.trim() || 'UN Secretariat';\n  const location = (html.match(locRx)   || [])[1]?.trim() || 'Various';\n  const posted   = (html.match(dateRx)  || [])[1]?.trim() || '';\n  const jobNo    = (html.match(jobIdRx) || [])[1]?.trim() || `UN-ROW-${rowIdx}`;\n  const linkPath = (html.match(linkRx)  || [])[1] || '';\n  const jobUrl   = linkPath ? `https://inspira.un.org${linkPath}` : 'https://inspira.un.org/psc/PUNA1J/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_APP_SCHJOB.GBL';\n\n  jobs.push({\n    json: {\n      job_id:         `UN-${jobNo.replace(/\\s+/g, '')}`,\n      title,\n      company:        dept,\n      location,\n      posted_date:    posted,\n      job_url:        jobUrl,\n      search_query:   keywords,\n      matched_skills: '',\n      relevance_score: 0,\n      date_found:     new Date().toISOString().split('T')[0],\n      source:         'UN Inspira'\n    }\n  });\n}\n\n// Pattern 2 fallback — generic link + text extraction if PeopleSoft IDs differ\nif (jobs.length === 0) {\n  const linkPattern = /href=\"([^\"]*HRS_APP_JBPST[^\"]*)\">([^<]{10,100})<\\/a>/g;\n  while ((m = linkPattern.exec(html)) !== null) {\n    const href  = m[1];\n    const title = m[2].trim();\n    if (title && !title.includes('class=')) {\n      jobs.push({\n        json: {\n          job_id:          'UN-' + href.replace(/[^a-z0-9]/gi, '').slice(-10),\n          title,\n          company:         'UN Secretariat',\n          location:        'Various',\n          posted_date:     '',\n          job_url:         href.startsWith('http') ? href : 'https://inspira.un.org' + href,\n          search_query:    keywords,\n          matched_skills:  '',\n          relevance_score: 0,\n          date_found:      new Date().toISOString().split('T')[0],\n          source:          'UN Inspira'\n        }\n      });\n    }\n  }\n}\n\nif (jobs.length === 0) {\n  return [{ json: {\n    job_id: null, title: 'No Inspira results parsed',\n    company: 'UN', location: null, posted_date: null,\n    job_url: 'https://inspira.un.org/psc/PUNA1J/EMPLOYEE/HRMS/c/HRS_HRAM.HRS_APP_SCHJOB.GBL',\n    search_query: keywords, matched_skills: '', relevance_score: 0,\n    date_found: new Date().toISOString().split('T')[0],\n    source: 'UN Inspira',\n    note: 'Session may require cookies or Inspira changed its HTML structure. Check html_length.',\n    html_length: html.length\n  }}];\n}\n\nreturn jobs;"
+      },
+      "name": "Parse Inspira Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 240],
+      "id": "un000007-0000-0000-0000-000000000007"
+    },
+
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://unjobs.org/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent",      "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            { "name": "Accept",          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+            { "name": "Accept-Language", "value": "en-US,en;q=0.5" },
+            { "name": "Referer",         "value": "https://unjobs.org/" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "criteria", "value": "={{ $json.keywords }}" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "text" } }
+        }
+      },
+      "name": "Search unjobs.org",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 560],
+      "id": "un000008-0000-0000-0000-000000000008"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse unjobs.org search results\n// unjobs.org is a UN job aggregator covering 50+ UN agencies\nconst html     = $input.item.json.data || '';\nconst keywords = $('Search Keywords').item.json.keywords;\nconst jobs     = [];\n\n// unjobs.org renders job cards in article/div blocks with class 'jobad'\n// Typical structure:\n//   <h3 class=\"job-title\"><a href=\"/duty_stations/...slug\">Title</a></h3>\n//   <span class=\"organization\">UNICEF</span>\n//   <span class=\"duty-station\">Nairobi, Kenya</span>\n//   <span class=\"deadline\">2024-01-31</span>\n\n// Pattern A: job title links\nconst cardPattern = /<h[23][^>]*>[\\s]*<a[^>]+href=\"(\\/[^\"]+)\"[^>]*>([^<]{5,120})<\\/a>[\\s]*<\\/h[23]>/g;\nconst orgPattern  = /<(?:span|div)[^>]*class=\"[^\"]*(?:organization|agency|org)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div)>/g;\nconst locPattern  = /<(?:span|div)[^>]*class=\"[^\"]*(?:duty.station|location|place)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div)>/g;\nconst datePattern = /<(?:span|div|time)[^>]*class=\"[^\"]*(?:deadline|closing|date)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div|time)>/g;\n\nconst titleMatches = [...html.matchAll(/<h[23][^>]*>[\\s]*<a[^>]+href=\"(\\/[^\"]+)\"[^>]*>([^<]{5,120})<\\/a>[\\s]*<\\/h[23]>/g)];\nconst orgMatches   = [...html.matchAll(/<(?:span|div)[^>]*class=\"[^\"]*(?:organization|agency|org)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div)>/g)];\nconst locMatches   = [...html.matchAll(/<(?:span|div)[^>]*class=\"[^\"]*(?:duty.station|location|place)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div)>/g)];\nconst dateMatches  = [...html.matchAll(/<(?:span|div|time)[^>]*class=\"[^\"]*(?:deadline|closing|date)[^\"]*\"[^>]*>([^<]+)<\\/(?:span|div|time)>/g)];\n\nfor (let i = 0; i < titleMatches.length; i++) {\n  const href  = titleMatches[i][1];\n  const title = titleMatches[i][2].trim();\n  const org   = orgMatches[i]   ? orgMatches[i][1].trim()   : 'UN Agency';\n  const loc   = locMatches[i]   ? locMatches[i][1].trim()   : 'Various';\n  const date  = dateMatches[i]  ? dateMatches[i][1].trim()  : '';\n\n  jobs.push({\n    json: {\n      job_id:          'UNJOBS-' + href.replace(/[^a-z0-9]/gi, '').slice(0, 20),\n      title,\n      company:         org,\n      location:        loc,\n      posted_date:     date,\n      job_url:         `https://unjobs.org${href}`,\n      search_query:    keywords,\n      matched_skills:  '',\n      relevance_score: 0,\n      date_found:      new Date().toISOString().split('T')[0],\n      source:          'unjobs.org (UN Aggregator)'\n    }\n  });\n}\n\nif (jobs.length === 0) {\n  // Fallback: try simpler anchor pattern — any link with /duty_stations/ path\n  const altMatches = [...html.matchAll(/href=\"(\\/duty_stations\\/[^\"]+)\">([^<]{5,120})<\\/a>/g)];\n  for (const m of altMatches) {\n    const title = m[2].replace(/&amp;/g, '&').trim();\n    jobs.push({\n      json: {\n        job_id:          'UNJOBS-' + m[1].replace(/[^a-z0-9]/gi, '').slice(0, 20),\n        title,\n        company:         'UN Agency',\n        location:        'Various',\n        posted_date:     '',\n        job_url:         `https://unjobs.org${m[1]}`,\n        search_query:    keywords,\n        matched_skills:  '',\n        relevance_score: 0,\n        date_found:      new Date().toISOString().split('T')[0],\n        source:          'unjobs.org (UN Aggregator)'\n      }\n    });\n  }\n}\n\nif (jobs.length === 0) {\n  return [{ json: {\n    job_id: null, title: 'No unjobs.org results parsed', company: 'UN', location: null,\n    posted_date: null, job_url: `https://unjobs.org/search?criteria=${encodeURIComponent(keywords)}`,\n    search_query: keywords, matched_skills: '', relevance_score: 0,\n    date_found: new Date().toISOString().split('T')[0],\n    source: 'unjobs.org (UN Aggregator)',\n    note: 'HTML structure may have changed. Check html_length.',\n    html_length: html.length\n  }}];\n}\n\nreturn jobs;"
+      },
+      "name": "Parse unjobs.org Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 560],
+      "id": "un000009-0000-0000-0000-000000000009"
+    },
+
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "name": "Merge UN Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1760, 400],
+      "id": "un000010-0000-0000-0000-000000000010"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SPREADSHEET_ID", "mode": "id" },
+        "sheetName":  { "__rl": true, "value": "Jobs Found",                "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mappingValues": [
+              { "fieldId": "job_id",          "fieldValue": "={{ $json.job_id }}" },
+              { "fieldId": "title",            "fieldValue": "={{ $json.title }}" },
+              { "fieldId": "company",          "fieldValue": "={{ $json.company }}" },
+              { "fieldId": "location",         "fieldValue": "={{ $json.location }}" },
+              { "fieldId": "posted_date",      "fieldValue": "={{ $json.posted_date }}" },
+              { "fieldId": "job_url",          "fieldValue": "={{ $json.job_url }}" },
+              { "fieldId": "matched_skills",   "fieldValue": "={{ $json.matched_skills }}" },
+              { "fieldId": "relevance_score",  "fieldValue": "={{ $json.relevance_score }}" },
+              { "fieldId": "search_query",     "fieldValue": "={{ $json.search_query }}" },
+              { "fieldId": "date_found",       "fieldValue": "={{ $json.date_found }}" },
+              { "fieldId": "source",           "fieldValue": "={{ $json.source }}" }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "name": "Sheet 1: Jobs Found (UN)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1980, 400],
+      "id": "un000011-0000-0000-0000-000000000011",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SET_YOUR_GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger":   { "main": [[{ "node": "Search Keywords", "type": "main", "index": 0 }]] },
+    "Search Keywords":  { "main": [[{ "node": "Portal Router",   "type": "main", "index": 0 }]] },
+    "Portal Router": {
+      "main": [
+        [{ "node": "Search unjobs.org",    "type": "main", "index": 0 }],
+        [{ "node": "Get Inspira Session",  "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Inspira Session":           { "main": [[{ "node": "Extract Inspira Session Token", "type": "main", "index": 0 }]] },
+    "Extract Inspira Session Token": { "main": [[{ "node": "Search Inspira Jobs",           "type": "main", "index": 0 }]] },
+    "Search Inspira Jobs":           { "main": [[{ "node": "Parse Inspira Results",         "type": "main", "index": 0 }]] },
+    "Search unjobs.org":             { "main": [[{ "node": "Parse unjobs.org Results",      "type": "main", "index": 0 }]] },
+    "Parse Inspira Results":     { "main": [[{ "node": "Merge UN Results", "type": "main", "index": 0 }]] },
+    "Parse unjobs.org Results":  { "main": [[{ "node": "Merge UN Results", "type": "main", "index": 1 }]] },
+    "Merge UN Results":          { "main": [[{ "node": "Sheet 1: Jobs Found (UN)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["un", "inspira", "jobs", "unjobs", "data-science"],
+  "meta": {
+    "description": "Searches for data science and related roles across UN Inspira (UN Secretariat) and unjobs.org (covers 50+ UN agencies: UNDP, UNICEF, WHO, WFP, UNHCR, etc.). Results are written to the same 'Jobs Found' Google Sheet tab used by the LinkedIn pipeline — the 'source' column tells you which portal each job came from. SETUP: (1) Same Google Sheets ID and credential as the main pipeline. (2) No API key needed for either source — both use web scraping. (3) Inspira note: if 'No Inspira results parsed' appears, the session flow may need cookies to be preserved between requests — add a 'Cookie Jar' HTTP option or log into Inspira once manually to check if the page requires login. (4) unjobs.org is more reliable as a fallback and covers all UN agencies."
+  }
+}
