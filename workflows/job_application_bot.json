@@ -1,0 +1,148 @@
+{
+  "name": "Job Application Form Filler",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-apply",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "jaf-001",
+      "name": "Application Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "job-apply-form"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.body.job_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "jaf-002",
+      "name": "Fetch Application Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pageHtml = $json.data || '';\nconst webhook   = $('Application Webhook').first().json.body;\nconst jobUrl    = webhook.job_url       || '';\nconst jobTitle  = webhook.job_title     || 'Data Science Position';\nconst company   = webhook.company_name  || 'Unknown Company';\n\n// --- UPDATE THESE FIELDS WITH YOUR REAL INFO ---\nconst profile = {\n  first_name:          'Yahya',\n  last_name:           'Ahmed',\n  full_name:           'Yahya Ahmed',\n  email:               'yahyaahmedafro@gmail.com',\n  phone:               'YOUR_PHONE_NUMBER',\n  address:             'YOUR_FULL_ADDRESS',\n  city:                'YOUR_CITY',\n  state:               'YOUR_STATE',\n  zip:                 'YOUR_ZIP',\n  country:             'United States',\n  nationality:         'YOUR_NATIONALITY',\n  linkedin:            'https://linkedin.com/in/YOUR_USERNAME',\n  github:              '',\n  portfolio:           '',\n  current_title:       'Data Science Professional',\n  years_experience:    '3+',\n  education_level:     'Bachelor of Science',\n  field_of_study:      'Data Science / Statistics',\n  university:          'YOUR_UNIVERSITY',\n  graduation_year:     'YOUR_GRAD_YEAR',\n  gpa:                 'YOUR_GPA',\n  skills:              'Python, SQL, Machine Learning, TensorFlow, scikit-learn, pandas, NumPy, R, Tableau, Power BI, Excel, Git, AWS',\n  certifications:      'YOUR_CERTIFICATIONS',\n  languages:           'English (Fluent)',\n  work_authorization:  'Authorized to work in the United States',\n  visa_sponsorship:    'No',\n  willing_to_relocate: 'Yes',\n  willing_to_travel:   'Yes, up to 25%',\n  desired_salary:      'Negotiable based on role and benefits',\n  employment_type:     'Full-time',\n  start_date:          'Immediately available',\n  referral_source:     'LinkedIn',\n  veteran_status:      'Not a veteran',\n  disability:          'No disability'\n};\n// -----------------------------------------------\n\nconst html = pageHtml.substring(0, 12000);\n\nconst userMsg = `Fill out this job application for the candidate.\\n\\nJOB: ${jobTitle} at ${company}\\nURL: ${jobUrl}\\n\\nCANDIDATE PROFILE:\\n${JSON.stringify(profile, null, 2)}\\n\\nPAGE HTML:\\n${html}\\n\\nRespond with ONLY this JSON structure:\\n{\\n  \"form_type\": \"simple_post\" or \"complex\",\\n  \"form_action\": \"URL if simple_post else null\",\\n  \"form_method\": \"POST\" or \"GET\",\\n  \"fields\": { \"input_field_name_or_label\": \"value_to_enter\" },\\n  \"cover_letter\": \"Two tailored paragraphs for this specific role\",\\n  \"step_by_step\": [\"Step 1...\", \"Step 2...\"],\\n  \"notes\": \"Anything important the candidate should know\",\\n  \"estimated_minutes\": 15\\n}`;\n\nconst openai_body = JSON.stringify({\n  model: 'gpt-4o-mini',\n  messages: [\n    { role: 'system', content: 'You are a job application assistant. Respond ONLY with valid JSON.' },\n    { role: 'user',   content: userMsg }\n  ],\n  response_format: { type: 'json_object' },\n  max_tokens: 2500\n});\n\nreturn [{ json: { openai_body, job_url: jobUrl, job_title: jobTitle, company } }];"
+      },
+      "id": "jaf-003",
+      "name": "Build Analysis Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_OPENAI_API_KEY" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.openai_body }}"
+      },
+      "id": "jaf-004",
+      "name": "OpenAI Form Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResp = $input.first().json;\nconst raw = aiResp.choices[0].message.content;\nlet analysis;\ntry {\n  analysis = JSON.parse(raw);\n} catch(e) {\n  analysis = {\n    form_type:         'complex',\n    fields:            {},\n    cover_letter:      '',\n    step_by_step:      ['Visit the URL', 'Fill in your details manually'],\n    notes:             'AI could not parse the form structure.',\n    estimated_minutes: 15\n  };\n}\n\nconst prev   = $('Build Analysis Prompt').first().json;\nconst fields = analysis.fields || {};\n\nconst fieldLines = Object.entries(fields)\n  .map(([k, v]) => `\u2022 *${k}:* ${v}`)\n  .join('\\n');\n\nconst steps = (analysis.step_by_step || [])\n  .map((s, i) => `${i + 1}. ${s}`)\n  .join('\\n');\n\nreturn [{\n  json: {\n    form_type:         analysis.form_type         || 'complex',\n    form_action:       analysis.form_action        || null,\n    fields,\n    field_lines:       fieldLines,\n    cover_letter:      analysis.cover_letter       || '',\n    steps,\n    notes:             analysis.notes              || '',\n    estimated_minutes: analysis.estimated_minutes  || 15,\n    job_url:           prev.job_url,\n    job_title:         prev.job_title,\n    company:           prev.company\n  }\n}];"
+      },
+      "id": "jaf-005",
+      "name": "Parse & Format Guide",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SPREADSHEET_ID", "mode": "id" },
+        "sheetName":  { "__rl": true, "value": "Application Tracker",        "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date":              "={{ new Date().toISOString().split('T')[0] }}",
+            "Company":           "={{ $json.company }}",
+            "Job Title":         "={{ $json.job_title }}",
+            "Job URL":           "={{ $json.job_url }}",
+            "Status":            "Fill Guide Generated",
+            "Cover Letter":      "={{ $json.cover_letter }}",
+            "Pre-Filled Fields": "={{ $json.field_lines }}",
+            "Steps":             "={{ $json.steps }}",
+            "Notes":             "={{ $json.notes }}",
+            "Est. Minutes":      "={{ $json.estimated_minutes }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "jaf-006",
+      "name": "Log to Application Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "from":    "+14155238886",
+        "to":      "whatsapp:+YOUR_WHATSAPP_NUMBER",
+        "message": "={{ '\ud83d\udccb *Application Fill Guide Ready*\\n\\n\ud83c\udfe2 *' + $json.company + '*\\n\ud83d\udcbc ' + $json.job_title + '\\n\ud83d\udd17 ' + $json.job_url + '\\n\\n\ud83d\udcdd *Steps:*\\n' + $json.steps + '\\n\\n\u23f1 Est. time: ' + $json.estimated_minutes + ' min\\n\\n\ud83d\udcca Pre-filled answers + cover letter in Application Tracker sheet!\\n\\n\u270d\ufe0f *Cover Letter Excerpt:*\\n' + ($json.cover_letter || '').substring(0, 280) }}"
+      },
+      "id": "jaf-007",
+      "name": "WhatsApp Alert",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1880, 300],
+      "credentials": {
+        "twilioApi": { "id": "YOUR_TWILIO_CREDENTIAL_ID", "name": "Twilio account" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, company: $json.company, job_title: $json.job_title, form_type: $json.form_type, fields_count: Object.keys($json.fields || {}).length, estimated_minutes: $json.estimated_minutes, message: 'Fill guide generated and saved. Check Application Tracker sheet and WhatsApp.' }) }}"
+      },
+      "id": "jaf-008",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2160, 300]
+    }
+  ],
+  "connections": {
+    "Application Webhook":        { "main": [[{ "node": "Fetch Application Page",      "type": "main", "index": 0 }]] },
+    "Fetch Application Page":     { "main": [[{ "node": "Build Analysis Prompt",       "type": "main", "index": 0 }]] },
+    "Build Analysis Prompt":      { "main": [[{ "node": "OpenAI Form Analysis",        "type": "main", "index": 0 }]] },
+    "OpenAI Form Analysis":       { "main": [[{ "node": "Parse & Format Guide",        "type": "main", "index": 0 }]] },
+    "Parse & Format Guide":       { "main": [[{ "node": "Log to Application Tracker",  "type": "main", "index": 0 }]] },
+    "Log to Application Tracker": { "main": [[{ "node": "WhatsApp Alert",              "type": "main", "index": 0 }]] },
+    "WhatsApp Alert":             { "main": [[{ "node": "Webhook Response",             "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["jobs", "application", "form", "ai", "openai", "google-sheets", "whatsapp"],
+  "meta": {
+    "description": "Analyzes a job application form URL with GPT-4o-mini, pre-fills all fields using Yahya's profile, writes a tailored cover letter, saves everything to Application Tracker Google Sheet, and sends a WhatsApp guide. TRIGGER: POST to /webhook/job-apply with JSON body { job_url, job_title, company_name }. Can also be triggered from WhatsApp bot via 'apply [URL]' command. SETUP: (1) Replace YOUR_OPENAI_API_KEY in OpenAI Form Analysis node. (2) Replace YOUR_GOOGLE_SPREADSHEET_ID in Log to Application Tracker node and connect Google Sheets credential. (3) Replace YOUR_TWILIO_CREDENTIAL_ID and YOUR_WHATSAPP_NUMBER in WhatsApp Alert node. (4) Fill in YOUR_PHONE_NUMBER, YOUR_UNIVERSITY etc. in the profile object inside Build Analysis Prompt node."
+  }
+}
