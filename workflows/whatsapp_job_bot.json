@@ -1,5 +1,5 @@
 {
-  "name": "WhatsApp Job Bot — Yahya Ahmed",
+  "name": "WhatsApp Job Bot \u2014 Yahya Ahmed",
   "active": false,
   "nodes": [
     {
@@ -17,7 +17,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse the incoming Twilio WhatsApp message\n// Twilio sends form-encoded body with fields: Body, From, To, etc.\nconst body = $input.first().json.body || {};\n\nconst rawText  = (body.Body || '').trim().toLowerCase();\nconst fromNum  = body.From || '';  // e.g. whatsapp:+254712345678\nconst toNum    = body.To   || '';  // your Twilio WhatsApp number\n\n// Parse command and arguments\nlet intent   = 'unknown';\nlet keywords = '';\nlet location = 'Remote';\n\nif (rawText === 'help' || rawText === 'hi' || rawText === 'hello' || rawText === 'start') {\n  intent = 'help';\n\n} else if (rawText === 'top' || rawText === 'top jobs' || rawText === 'jobs') {\n  intent = 'top';   // return recent top-scored jobs (searches LinkedIn now)\n  keywords = 'AI engineer data scientist machine learning';\n  location = 'Remote';\n\n} else if (rawText.startsWith('find ') || rawText.startsWith('search ')) {\n  intent = 'search';\n  let query = rawText.replace(/^(find|search)\\s+/, '');\n  // Detect optional \" in [location]\" suffix\n  const inMatch = query.match(/\\s+in\\s+(.+)$/);\n  if (inMatch) {\n    location = inMatch[1].trim();\n    keywords = query.replace(inMatch[0], '').trim();\n  } else {\n    keywords = query;\n  }\n\n} else {\n  intent = 'unknown';\n}\n\nreturn [{\n  json: { intent, keywords, location, from_number: fromNum, to_number: toNum, raw_text: rawText }\n}];"
+        "jsCode": "const body = $input.first().json.body || {};\n\nconst rawText  = (body.Body || '').trim().toLowerCase();\nconst fromNum  = body.From || '';\nconst toNum    = body.To   || '';\n\nlet intent   = 'unknown';\nlet keywords = '';\nlet location = 'Remote';\nlet job_url  = '';\n\nif (rawText === 'help' || rawText === 'hi' || rawText === 'hello' || rawText === 'start') {\n  intent = 'help';\n\n} else if (rawText === 'top' || rawText === 'top jobs' || rawText === 'jobs') {\n  intent = 'top';\n  keywords = 'AI engineer data scientist machine learning';\n  location = 'Remote';\n\n} else if (rawText.startsWith('find ') || rawText.startsWith('search ')) {\n  intent = 'search';\n  let query = rawText.replace(/^(find|search)\\s+/, '');\n  const inMatch = query.match(/\\s+in\\s+(.+)$/);\n  if (inMatch) {\n    location = inMatch[1].trim();\n    keywords = query.replace(inMatch[0], '').trim();\n  } else {\n    keywords = query;\n  }\n\n} else if (rawText.startsWith('apply ')) {\n  intent = 'apply';\n  const urlMatch = rawText.match(/https?:\\/\\/[^\\s]+/i);\n  job_url = urlMatch ? urlMatch[0] : '';\n\n} else {\n  intent = 'unknown';\n}\n\nreturn [{ json: { intent, keywords, location, job_url, from_number: fromNum, to_number: toNum, raw_text: rawText } }];"
       },
       "name": "Parse Command",
       "type": "n8n-nodes-base.code",
@@ -49,9 +49,16 @@
                 "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "help", "operator": { "type": "string", "operation": "equals" } }]
               },
               "output": 2
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false },
+                "conditions": [{ "leftValue": "={{ $json.intent }}", "rightValue": "apply", "operator": { "type": "string", "operation": "equals" } }]
+              },
+              "output": 3
             }
           ],
-          "fallbackOutput": 3
+          "fallbackOutput": 4
         }
       },
       "name": "Route Command",
@@ -92,7 +99,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse LinkedIn HTML into job list, then format as WhatsApp reply\nconst html        = $input.item.json.data || '';\nconst fromNode    = $('Parse Command').first().json;\nconst keywords    = fromNode.keywords;\nconst location    = fromNode.location;\nconst fromNumber  = fromNode.from_number;\nconst toNumber    = fromNode.to_number;\n\nconst mySkills = ['n8n','python','sql','gcp','vertex ai','machine learning','data science',\n  'ai','llm','automation','data analyst','cloud','bigquery'];\n\nconst jobs = [];\nconst liBlocks = html.split(/<\\/li>/);\n\nfor (const block of liBlocks) {\n  if (!block.includes('base-card')) continue;\n\n  const titleMatch   = block.match(/class=\"[^\"]*base-search-card__title[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/h3>/);\n  const title        = titleMatch ? titleMatch[1].trim() : null;\n  if (!title) continue;\n\n  const companyMatch = block.match(/class=\"[^\"]*base-search-card__subtitle[^\"]*\"[^>]*>[\\s]*(?:<[^>]+>[\\s]*)*([^<]+)[\\s]*<\\//);\n  const company      = companyMatch ? companyMatch[1].trim() : 'Unknown';\n\n  const locMatch     = block.match(/class=\"[^\"]*job-search-card__location[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/span>/);\n  const jobLocation  = locMatch ? locMatch[1].trim() : '';\n\n  const urlMatch     = block.match(/href=\"(https:\\/\\/[^\"]*linkedin\\.com\\/jobs\\/view\\/[^\"?]+)/);\n  const jobUrl       = urlMatch ? urlMatch[1].split('?')[0] : '';\n\n  const haystack     = (title + ' ' + company).toLowerCase();\n  const score        = mySkills.filter(s => haystack.includes(s)).length;\n\n  jobs.push({ title, company, location: jobLocation, job_url: jobUrl, score });\n}\n\njobs.sort((a, b) => b.score - a.score);\nconst top = jobs.slice(0, 3);\n\nlet reply = '';\nif (top.length === 0) {\n  reply = `🔍 No jobs found for \"${keywords}\" in ${location}.\\nTry a broader term — e.g. _find data scientist_`;\n} else {\n  reply = `🔍 *Top ${top.length} results for \"${keywords}\"*\\n_(${location})_\\n\\n`;\n  top.forEach((j, i) => {\n    reply += `${i + 1}. *${j.title}*\\n   _${j.company}_ • ${j.location}\\n   ${j.job_url}\\n\\n`;\n  });\n  reply += `Reply *find [job title]* to search again.`;\n}\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
+        "jsCode": "const html        = $input.item.json.data || '';\nconst fromNode    = $('Parse Command').first().json;\nconst keywords    = fromNode.keywords;\nconst location    = fromNode.location;\nconst fromNumber  = fromNode.from_number;\nconst toNumber    = fromNode.to_number;\n\nconst mySkills = ['n8n','python','sql','gcp','vertex ai','machine learning','data science',\n  'ai','llm','automation','data analyst','cloud','bigquery'];\n\nconst jobs = [];\nconst liBlocks = html.split(/<\\/li>/);\n\nfor (const block of liBlocks) {\n  if (!block.includes('base-card')) continue;\n\n  const titleMatch   = block.match(/class=\"[^\"]*base-search-card__title[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/h3>/);\n  const title        = titleMatch ? titleMatch[1].trim() : null;\n  if (!title) continue;\n\n  const companyMatch = block.match(/class=\"[^\"]*base-search-card__subtitle[^\"]*\"[^>]*>[\\s]*(?:<[^>]+>[\\s]*)*([^<]+)[\\s]*<\\//);\n  const company      = companyMatch ? companyMatch[1].trim() : 'Unknown';\n\n  const locMatch     = block.match(/class=\"[^\"]*job-search-card__location[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/span>/);\n  const jobLocation  = locMatch ? locMatch[1].trim() : '';\n\n  const urlMatch     = block.match(/href=\"(https:\\/\\/[^\"]*linkedin\\.com\\/jobs\\/view\\/[^\"?]+)/);\n  const jobUrl       = urlMatch ? urlMatch[1].split('?')[0] : '';\n\n  const haystack     = (title + ' ' + company).toLowerCase();\n  const score        = mySkills.filter(s => haystack.includes(s)).length;\n\n  jobs.push({ title, company, location: jobLocation, job_url: jobUrl, score });\n}\n\njobs.sort((a, b) => b.score - a.score);\nconst top = jobs.slice(0, 3);\n\nlet reply = '';\nif (top.length === 0) {\n  reply = `\ud83d\udd0d No jobs found for \"${keywords}\" in ${location}.\\nTry a broader term \u2014 e.g. _find data scientist_`;\n} else {\n  reply = `\ud83d\udd0d *Top ${top.length} results for \"${keywords}\"*\\n_(${location})_\\n\\n`;\n  top.forEach((j, i) => {\n    reply += `${i + 1}. *${j.title}*\\n   _${j.company}_ \u2022 ${j.location}\\n   ${j.job_url}\\n\\n`;\n  });\n  reply += `Reply *find [job title]* to search again.`;\n}\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
       },
       "name": "Parse & Format Search Results",
       "type": "n8n-nodes-base.code",
@@ -102,17 +109,18 @@
     },
     {
       "parameters": {
-        "jsCode": "const fromNode   = $input.item.json;\nconst fromNumber = fromNode.from_number;\nconst toNumber   = fromNode.to_number;\n\nconst reply = [\n  '🤖 *Yahya Job Bot — Commands*',\n  '',\n  '*find [keywords]* — search LinkedIn',\n  '  e.g. _find AI engineer_',\n  '  e.g. _find data scientist in Nairobi_',\n  '',\n  '*top* — find top AI/ML jobs right now',\n  '',\n  '*help* — show this menu',\n  '',\n  'Results show title, company, location & link.',\n  'Full resumes are in your Google Sheet. 📊'\n].join('\\n');\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
+        "jsCode": "const fromNode   = $input.item.json;\nconst fromNumber = fromNode.from_number;\nconst toNumber   = fromNode.to_number;\n\nconst reply = [\n  '\ud83e\udd16 *Yahya Job Bot \u2014 Commands*',\n  '',\n  '*find [keywords]* \u2014 search LinkedIn',\n  '  e.g. _find AI engineer_',\n  '  e.g. _find data scientist in Nairobi_',\n  '',\n  '*top* \u2014 find top AI/ML jobs right now',\n  '',\n  '*apply [URL]* \u2014 analyze a job form & pre-fill answers',\n  '  e.g. _apply https://jobs.company.com/apply/123_',\n  '',\n  '*help* \u2014 show this menu',\n  '',\n  'Search results: title, company, location & link.',\n  'Apply guides go to your Google Sheet \ud83d\udcca + back here.'
+].join('\\n');\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
       },
       "name": "Build Help Reply",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 440],
+      "position": [880, 400],
       "id": "wb000006-0000-0000-0000-000000000006"
     },
     {
       "parameters": {
-        "jsCode": "const fromNode   = $input.item.json;\nconst fromNumber = fromNode.from_number;\nconst toNumber   = fromNode.to_number;\nconst rawText    = fromNode.raw_text || '';\n\nconst reply = [\n  `❓ Didn't understand: \"${rawText}\"`,\n  '',\n  'Try:',\n  '• *find AI engineer remote*',\n  '• *find data scientist in Nairobi*',\n  '• *top* — top jobs now',\n  '• *help* — see all commands'\n].join('\\n');\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
+        "jsCode": "const fromNode   = $input.item.json;\nconst fromNumber = fromNode.from_number;\nconst toNumber   = fromNode.to_number;\nconst rawText    = fromNode.raw_text || '';\n\nconst reply = [\n  `\u2753 Didn't understand: \"${rawText}\"`,\n  '',\n  'Try:',\n  '\u2022 *find AI engineer remote*',\n  '\u2022 *find data scientist in Nairobi*',\n  '\u2022 *top* \u2014 top jobs now',\n  '\u2022 *apply https://...* \u2014 fill out a job form',\n  '\u2022 *help* \u2014 see all commands'\n].join('\\n');\n\nreturn [{ json: { reply, from_number: fromNumber, to_number: toNumber } }];"
       },
       "name": "Build Unknown Reply",
       "type": "n8n-nodes-base.code",
@@ -150,6 +158,42 @@
       "typeVersion": 1.1,
       "position": [1540, 400],
       "id": "wb000009-0000-0000-0000-000000000009"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\nconst job_url    = d.job_url;\nconst from_number = d.from_number;\nconst to_number   = d.to_number;\n\nif (!job_url) {\n  return [{\n    json: {\n      error: 'no_url',\n      request_body: null,\n      reply: '\u274c Please include the full URL.\\nExample: *apply https://jobs.example.com/data-analyst*',\n      from_number,\n      to_number\n    }\n  }];\n}\n\nlet company_name = 'Company';\nlet job_title = 'Data Science Position';\ntry {\n  const urlObj = new URL(job_url);\n  company_name = urlObj.hostname.replace(/^www\\./, '');\n  const parts = urlObj.pathname.split('/').filter(Boolean);\n  if (parts.length) {\n    job_title = parts[parts.length - 1]\n      .replace(/[-_]/g, ' ')\n      .replace(/\\d+/g, '')\n      .trim() || 'Data Science Position';\n  }\n} catch(e) {}\n\nconst request_body = JSON.stringify({ job_url, job_title, company_name });\n\nreturn [{\n  json: { job_url, job_title, company_name, request_body, from_number, to_number }\n}];"
+      },
+      "name": "Handle Apply Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 780],
+      "id": "wb000010-0000-0000-0000-000000000010"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yahyasl85.app.n8n.cloud/webhook/job-apply",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "name": "Call Application Bot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 780],
+      "id": "wb000011-0000-0000-0000-000000000011"
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $input.first().json;\nconst prev = $('Handle Apply Command').first().json;\nconst from_number = prev.from_number;\nconst to_number   = prev.to_number;\n\nlet reply;\nif (resp.success) {\n  reply = `\u2705 *Application Guide Ready!*\\n\\n\ud83c\udfe2 ${resp.company || prev.company_name}\\n\ud83d\udcbc ${resp.job_title || prev.job_title}\\n\\n\ud83d\udcdd ${resp.fields_count || 0} fields pre-filled\\n\u23f1 Est. ${resp.estimated_minutes || 15} min to complete manually\\n\\n\ud83d\udcca Full guide + cover letter saved in *Application Tracker* sheet!\\nYou'll get another WhatsApp with the details shortly.`;\n} else {\n  reply = `\u274c Couldn't analyze that application page.\\n\\nMake sure the URL links directly to the application form (not just the job listing).\\nTry: *apply https://[direct form URL]*`;\n}\n\nreturn [{ json: { reply, from_number, to_number } }];"
+      },
+      "name": "Build Apply Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 780],
+      "id": "wb000012-0000-0000-0000-000000000012"
     }
   ],
   "connections": {
@@ -157,21 +201,25 @@
     "Parse Command":    { "main": [[{ "node": "Route Command", "type": "main", "index": 0 }]] },
     "Route Command": {
       "main": [
-        [{ "node": "Search LinkedIn",    "type": "main", "index": 0 }],
-        [{ "node": "Search LinkedIn",    "type": "main", "index": 0 }],
-        [{ "node": "Build Help Reply",   "type": "main", "index": 0 }],
-        [{ "node": "Build Unknown Reply","type": "main", "index": 0 }]
+        [{ "node": "Search LinkedIn",     "type": "main", "index": 0 }],
+        [{ "node": "Search LinkedIn",     "type": "main", "index": 0 }],
+        [{ "node": "Build Help Reply",    "type": "main", "index": 0 }],
+        [{ "node": "Handle Apply Command","type": "main", "index": 0 }],
+        [{ "node": "Build Unknown Reply", "type": "main", "index": 0 }]
       ]
     },
-    "Search LinkedIn":              { "main": [[{ "node": "Parse & Format Search Results", "type": "main", "index": 0 }]] },
-    "Parse & Format Search Results":{ "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
-    "Build Help Reply":             { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
-    "Build Unknown Reply":          { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
-    "Send WhatsApp Reply":          { "main": [[{ "node": "Respond to Twilio",  "type": "main", "index": 0 }]] }
+    "Search LinkedIn":               { "main": [[{ "node": "Parse & Format Search Results", "type": "main", "index": 0 }]] },
+    "Parse & Format Search Results": { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
+    "Build Help Reply":              { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
+    "Build Unknown Reply":           { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
+    "Handle Apply Command":          { "main": [[{ "node": "Call Application Bot", "type": "main", "index": 0 }]] },
+    "Call Application Bot":          { "main": [[{ "node": "Build Apply Reply",   "type": "main", "index": 0 }]] },
+    "Build Apply Reply":             { "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]] },
+    "Send WhatsApp Reply":           { "main": [[{ "node": "Respond to Twilio",   "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" },
-  "tags": ["whatsapp", "twilio", "bot", "linkedin", "jobs"],
+  "tags": ["whatsapp", "twilio", "bot", "linkedin", "jobs", "application"],
   "meta": {
-    "description": "Interactive WhatsApp job search bot. Text the bot to search LinkedIn in real time. Commands: 'find [keywords]', 'find [keywords] in [location]', 'top', 'help'. SETUP: (1) Set Twilio credential. (2) In n8n, activate this workflow and copy the webhook URL shown on the Webhook node. (3) In Twilio console → Messaging → WhatsApp → Sandbox Settings, paste that URL into 'When a message comes in'. (4) Send 'join <your-sandbox-word>' to the Twilio sandbox number (+1 415 523 8886) from your WhatsApp to register your number."
+    "description": "Interactive WhatsApp job search + application bot. Commands: 'find [keywords]', 'find [keywords] in [location]', 'top', 'apply [URL]', 'help'. The 'apply' command calls the Job Application Form Filler workflow to analyze the form, pre-fill answers, and return a guide. SETUP: (1) Set Twilio credential on Send WhatsApp Reply node. (2) Activate this workflow and copy the webhook URL. (3) In Twilio console, paste URL into WhatsApp sandbox 'When a message comes in'. (4) Send 'join <sandbox-word>' to +1 415 523 8886 from your WhatsApp."
   }
 }
