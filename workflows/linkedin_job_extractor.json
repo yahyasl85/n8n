@@ -1,0 +1,164 @@
+{
+  "name": "LinkedIn Job Extractor",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "kw-1",
+              "name": "keywords",
+              "value": "software engineer",
+              "type": "string"
+            },
+            {
+              "id": "loc-1",
+              "name": "location",
+              "value": "United States",
+              "type": "string"
+            },
+            {
+              "id": "start-1",
+              "name": "start",
+              "value": 0,
+              "type": "number"
+            },
+            {
+              "id": "count-1",
+              "name": "count",
+              "value": 25,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Search Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.5"
+            },
+            {
+              "name": "Referer",
+              "value": "https://www.linkedin.com/jobs/search/"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "keywords",
+              "value": "={{ $json.keywords }}"
+            },
+            {
+              "name": "location",
+              "value": "={{ $json.location }}"
+            },
+            {
+              "name": "start",
+              "value": "={{ $json.start }}"
+            },
+            {
+              "name": "count",
+              "value": "={{ $json.count }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Fetch LinkedIn Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data;\nconst jobs = [];\n\nif (!html) {\n  return [{ json: { error: 'No HTML received from LinkedIn', jobs: [] } }];\n}\n\n// Split into individual <li> job card blocks\nconst liBlocks = html.split(/<\\/li>/);\n\nfor (const block of liBlocks) {\n  if (!block.includes('base-card')) continue;\n\n  // Job title\n  const titleMatch = block.match(/class=\"[^\"]*base-search-card__title[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/h3>/);\n  const title = titleMatch ? titleMatch[1].trim() : null;\n  if (!title) continue;\n\n  // Company name\n  const companyMatch = block.match(/class=\"[^\"]*base-search-card__subtitle[^\"]*\"[^>]*>[\\s]*(?:<[^>]+>[\\s]*)*([^<]+)[\\s]*<\\//);\n  const company = companyMatch ? companyMatch[1].trim() : 'Unknown';\n\n  // Location\n  const locationMatch = block.match(/class=\"[^\"]*job-search-card__location[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/span>/);\n  const location = locationMatch ? locationMatch[1].trim() : 'Unknown';\n\n  // Posted date (ISO datetime attribute)\n  const dateMatch = block.match(/datetime=\"([^\"]+)\"/);\n  const postedDate = dateMatch ? dateMatch[1] : null;\n\n  // Relative time label (e.g. \"2 days ago\")\n  const relTimeMatch = block.match(/class=\"[^\"]*job-search-card__listdate[^\"]*\"[^>]*>([^<]+)<\\/time>/);\n  const relativeTime = relTimeMatch ? relTimeMatch[1].trim() : null;\n\n  // Job URL\n  const urlMatch = block.match(/href=\"(https:\\/\\/[^\"]*linkedin\\.com\\/jobs\\/view\\/[^\"?]+)/);\n  const jobUrl = urlMatch ? urlMatch[1].split('?')[0] : null;\n\n  // Job ID from URL\n  const idMatch = jobUrl ? jobUrl.match(/view\\/(\\d+)/) : null;\n  const jobId = idMatch ? idMatch[1] : null;\n\n  // Employment type / benefits badge\n  const benefitsMatch = block.match(/class=\"[^\"]*job-search-card__benefits[^\"]*\"[^>]*>([^<]+)<\\//);\n  const employmentType = benefitsMatch ? benefitsMatch[1].trim() : null;\n\n  jobs.push({\n    json: {\n      job_id: jobId,\n      title,\n      company,\n      location,\n      employment_type: employmentType,\n      posted_date: postedDate,\n      relative_time: relativeTime,\n      job_url: jobUrl,\n      source: 'LinkedIn'\n    }\n  });\n}\n\nif (jobs.length === 0) {\n  return [{\n    json: {\n      message: 'No jobs parsed. LinkedIn may be rate-limiting this request or the page structure has changed.',\n      html_length: html.length,\n      jobs: []\n    }\n  }];\n}\n\nreturn jobs;"
+      },
+      "name": "Parse Job Listings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Search Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Parameters": {
+      "main": [
+        [
+          {
+            "node": "Fetch LinkedIn Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch LinkedIn Jobs": {
+      "main": [
+        [
+          {
+            "node": "Parse Job Listings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["jobs", "linkedin", "extraction"],
+  "meta": {
+    "description": "Extracts job listings from LinkedIn using the public guest jobs API. Configure keywords and location in the Search Parameters node. Each output item contains: job_id, title, company, location, employment_type, posted_date, relative_time, job_url, source."
+  }
+}

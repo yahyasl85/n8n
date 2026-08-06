@@ -1,0 +1,297 @@
+{
+  "name": "AI Job Hunter & Resume Tailor — Yahya Ahmed",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 400],
+      "id": "dd000001-0000-0000-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── EDIT THIS NODE TO UPDATE YOUR PROFILE EVERYWHERE ──\nconst profile = {\n  name: 'Yahya Ahmed',\n  location: 'Nairobi, Kenya',\n  summary: 'AI Engineer and Machine Learning Specialist with 9+ years in enterprise automation, data analytics, and geostrategic economic research. Expert at turning complex data into production-grade automated solutions.',\n  skills: ['n8n', 'Python', 'NumPy', 'SymPy', 'SQL', 'Google Cloud Platform', 'Vertex AI', 'Machine Learning', 'Data Science', 'AI Orchestration', 'Multi-agent Systems', 'LLMs', 'Data Visualization', 'K-Means Clustering', 'Predictive Modeling', 'EDA'],\n  experience: [\n    { title: 'Founder & Principal Consultant', company: 'YSL Solutions', period: 'Jan 2026 – Present' },\n    { title: 'Agribusiness Entrepreneur', company: 'Seed Distribution Venture (Nairobi)', period: '2026 – Present' },\n    { title: 'Economic Researcher', company: 'United Nations Economic Commission for Africa', period: 'Past' }\n  ],\n  education: [\n    { degree: 'Master of Data Science (Candidate)', school: 'University of Pittsburgh', notes: 'Focus: LLMs & Data Visualization | 98% performance metric' },\n    { degree: 'B.S. Agricultural Biotechnology & Agroecology', school: 'Virginia Tech' }\n  ],\n  certifications: ['Google Cloud Professional Data Engineer (GCP)', 'IABAC Certified Data Scientist & AI Expert']\n};\n\nconst searches = [\n  { keywords: 'AI engineer workflow automation n8n',      location: 'Remote' },\n  { keywords: 'data scientist machine learning GCP',       location: 'Remote' },\n  { keywords: 'AI consultant automation specialist',       location: '' }\n];\n\nreturn searches.map(s => ({ json: { profile, ...s } }));"
+      },
+      "name": "Profile & Search Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 400],
+      "id": "dd000002-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "User-Agent",      "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" },
+            { "name": "Accept",          "value": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" },
+            { "name": "Accept-Language", "value": "en-US,en;q=0.5" },
+            { "name": "Referer",         "value": "https://www.linkedin.com/jobs/search/" }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "keywords", "value": "={{ $json.keywords }}" },
+            { "name": "location", "value": "={{ $json.location }}" },
+            { "name": "start",    "value": "0" },
+            { "name": "count",    "value": "10" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "text" } }
+        }
+      },
+      "name": "Fetch LinkedIn Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 400],
+      "id": "dd000003-0000-0000-0000-000000000003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.item.json.data || '';\nconst profile = $input.item.json.profile;\nconst searchKeywords = $input.item.json.keywords;\nconst results = [];\n\nconst liBlocks = html.split(/<\\/li>/);\n\nfor (const block of liBlocks) {\n  if (!block.includes('base-card')) continue;\n\n  const titleMatch   = block.match(/class=\"[^\"]*base-search-card__title[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/h3>/);\n  const title        = titleMatch ? titleMatch[1].trim() : null;\n  if (!title) continue;\n\n  const companyMatch  = block.match(/class=\"[^\"]*base-search-card__subtitle[^\"]*\"[^>]*>[\\s]*(?:<[^>]+>[\\s]*)*([^<]+)[\\s]*<\\//);\n  const company       = companyMatch ? companyMatch[1].trim() : 'Unknown';\n\n  const locMatch      = block.match(/class=\"[^\"]*job-search-card__location[^\"]*\"[^>]*>[\\s]*([^<]+)[\\s]*<\\/span>/);\n  const jobLocation   = locMatch ? locMatch[1].trim() : 'Unknown';\n\n  const dateMatch     = block.match(/datetime=\"([^\"]+)\"/);\n  const postedDate    = dateMatch ? dateMatch[1] : '';\n\n  const urlMatch      = block.match(/href=\"(https:\\/\\/[^\"]*linkedin\\.com\\/jobs\\/view\\/[^\"?]+)/);\n  const jobUrl        = urlMatch ? urlMatch[1].split('?')[0] : '';\n\n  const idMatch       = jobUrl.match(/view\\/(\\d+)/);\n  const jobId         = idMatch ? idMatch[1] : (company + '-' + title).toLowerCase().replace(/\\s+/g, '-').replace(/[^a-z0-9-]/g, '');\n\n  const haystack      = (title + ' ' + company).toLowerCase();\n  const matched       = profile.skills.filter(s => haystack.includes(s.toLowerCase()));\n  const score         = matched.length;\n\n  results.push({\n    json: {\n      job_id: jobId, title, company,\n      location: jobLocation, posted_date: postedDate, job_url: jobUrl,\n      search_query: searchKeywords, matched_skills: matched.join(', '),\n      relevance_score: score,\n      date_found: new Date().toISOString().split('T')[0],\n      source: 'LinkedIn', profile\n    }\n  });\n}\n\nif (results.length === 0) {\n  return [{ json: {\n    job_id: null, title: 'No jobs found', company: null, location: null,\n    posted_date: null, job_url: null, search_query: searchKeywords,\n    matched_skills: '', relevance_score: 0,\n    date_found: new Date().toISOString().split('T')[0],\n    source: 'LinkedIn', profile\n  }}];\n}\n\nreturn results;"
+      },
+      "name": "Parse & Score Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [860, 400],
+      "id": "dd000004-0000-0000-0000-000000000004"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SPREADSHEET_ID", "mode": "id" },
+        "sheetName":  { "__rl": true, "value": "Jobs Found", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mappingValues": [
+              { "fieldId": "job_id",          "fieldValue": "={{ $json.job_id }}" },
+              { "fieldId": "title",            "fieldValue": "={{ $json.title }}" },
+              { "fieldId": "company",          "fieldValue": "={{ $json.company }}" },
+              { "fieldId": "location",         "fieldValue": "={{ $json.location }}" },
+              { "fieldId": "posted_date",      "fieldValue": "={{ $json.posted_date }}" },
+              { "fieldId": "job_url",          "fieldValue": "={{ $json.job_url }}" },
+              { "fieldId": "matched_skills",   "fieldValue": "={{ $json.matched_skills }}" },
+              { "fieldId": "relevance_score",  "fieldValue": "={{ $json.relevance_score }}" },
+              { "fieldId": "search_query",     "fieldValue": "={{ $json.search_query }}" },
+              { "fieldId": "date_found",       "fieldValue": "={{ $json.date_found }}" },
+              { "fieldId": "source",           "fieldValue": "={{ $json.source }}" }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "name": "Sheet 1: Jobs Found",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1080, 220],
+      "id": "dd000005-0000-0000-0000-000000000005",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SET_YOUR_GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $input.item.json;\n\nconst systemPrompt = 'You are an expert resume writer and career coach specializing in AI, Data Science, and Technology roles. Tailor a candidate resume for the given job. Return ONLY a raw JSON object (no markdown, no code fences) with these four fields: tailored_summary (2-3 sentences), key_skills (array of 6-8 strings), cover_note (one concise paragraph), match_assessment (one sentence rating the fit).';\n\nconst userPrompt = [\n  'JOB DETAILS:',\n  'Title: ' + job.title,\n  'Company: ' + job.company,\n  'Location: ' + job.location,\n  'URL: ' + job.job_url,\n  '',\n  'CANDIDATE PROFILE:',\n  'Name: ' + job.profile.name,\n  'Background: ' + job.profile.summary,\n  'Skills: ' + job.profile.skills.join(', '),\n  'Experience: ' + job.profile.experience.map(e => e.title + ' @ ' + e.company + ' (' + e.period + ')').join(' | '),\n  'Education: ' + job.profile.education.map(e => e.degree + ' — ' + e.school).join(' | '),\n  'Certifications: ' + job.profile.certifications.join(', '),\n  '',\n  'Return ONLY valid JSON.'\n].join('\\n');\n\nreturn [{\n  json: {\n    job_id: job.job_id, title: job.title, company: job.company,\n    location: job.location, job_url: job.job_url,\n    date_found: job.date_found, relevance_score: job.relevance_score,\n    matched_skills: job.matched_skills,\n    openai_body: JSON.stringify({\n      model: 'gpt-4o-mini',\n      max_tokens: 1200,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: systemPrompt },\n        { role: 'user',   content: userPrompt }\n      ]\n    })\n  }\n}];"
+      },
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 580],
+      "id": "dd000006-0000-0000-0000-000000000006"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer YOUR_OPENAI_API_KEY" },
+            { "name": "Content-Type",  "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.openai_body }}",
+        "options": { "response": { "response": { "responseFormat": "json" } } }
+      },
+      "name": "AI Resume Tailor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 580],
+      "id": "dd000007-0000-0000-0000-000000000007"
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResp  = $input.item.json;\nconst jobMeta = $('Build AI Prompt').item.json;\n\nlet content = {};\ntry {\n  const raw     = aiResp.choices?.[0]?.message?.content || '{}';\n  const cleaned = raw.replace(/```json\\n?|```/g, '').trim();\n  content       = JSON.parse(cleaned);\n} catch (e) {\n  content = { tailored_summary: '', key_skills: [], cover_note: '',\n    match_assessment: 'Parse error: ' + (aiResp.choices?.[0]?.message?.content || '').slice(0, 200) };\n}\n\nreturn [{\n  json: {\n    job_id:           jobMeta.job_id,\n    title:            jobMeta.title,\n    company:          jobMeta.company,\n    location:         jobMeta.location,\n    job_url:          jobMeta.job_url,\n    relevance_score:  jobMeta.relevance_score,\n    matched_skills:   jobMeta.matched_skills,\n    date_generated:   new Date().toISOString().split('T')[0],\n    tailored_summary: content.tailored_summary || '',\n    key_skills:       Array.isArray(content.key_skills) ? content.key_skills.join(', ') : (content.key_skills || ''),\n    cover_note:       content.cover_note || '',\n    match_assessment: content.match_assessment || ''\n  }\n}];"
+      },
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1520, 580],
+      "id": "dd000008-0000-0000-0000-000000000008"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SPREADSHEET_ID", "mode": "id" },
+        "sheetName":  { "__rl": true, "value": "Tailored Resumes", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mappingValues": [
+              { "fieldId": "job_id",           "fieldValue": "={{ $json.job_id }}" },
+              { "fieldId": "title",             "fieldValue": "={{ $json.title }}" },
+              { "fieldId": "company",           "fieldValue": "={{ $json.company }}" },
+              { "fieldId": "job_url",           "fieldValue": "={{ $json.job_url }}" },
+              { "fieldId": "date_generated",    "fieldValue": "={{ $json.date_generated }}" },
+              { "fieldId": "match_assessment",  "fieldValue": "={{ $json.match_assessment }}" },
+              { "fieldId": "tailored_summary",  "fieldValue": "={{ $json.tailored_summary }}" },
+              { "fieldId": "key_skills",        "fieldValue": "={{ $json.key_skills }}" },
+              { "fieldId": "cover_note",        "fieldValue": "={{ $json.cover_note }}" }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "name": "Sheet 2: Tailored Resumes",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1740, 440],
+      "id": "dd000009-0000-0000-0000-000000000009",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SET_YOUR_GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "YOUR_GOOGLE_SPREADSHEET_ID", "mode": "id" },
+        "sheetName":  { "__rl": true, "value": "Application Tracker", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "mappingValues": [
+              { "fieldId": "job_id",              "fieldValue": "={{ $json.job_id }}" },
+              { "fieldId": "title",               "fieldValue": "={{ $json.title }}" },
+              { "fieldId": "company",             "fieldValue": "={{ $json.company }}" },
+              { "fieldId": "location",            "fieldValue": "={{ $json.location }}" },
+              { "fieldId": "job_url",             "fieldValue": "={{ $json.job_url }}" },
+              { "fieldId": "relevance_score",     "fieldValue": "={{ $json.relevance_score }}" },
+              { "fieldId": "match_assessment",    "fieldValue": "={{ $json.match_assessment }}" },
+              { "fieldId": "application_status",  "fieldValue": "To Apply" },
+              { "fieldId": "date_added",          "fieldValue": "={{ $json.date_generated }}" },
+              { "fieldId": "date_applied",        "fieldValue": "" },
+              { "fieldId": "interview_date",      "fieldValue": "" },
+              { "fieldId": "offer_status",        "fieldValue": "" },
+              { "fieldId": "notes",               "fieldValue": "" }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "name": "Sheet 3: Application Tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1740, 720],
+      "id": "dd000010-0000-0000-0000-000000000010",
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "SET_YOUR_GOOGLE_SHEETS_CREDENTIAL_ID", "name": "Google Sheets account" }
+      }
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "jobs",
+        "options": {}
+      },
+      "name": "Collect All Jobs",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1960, 580],
+      "id": "dd000011-0000-0000-0000-000000000011"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a single WhatsApp summary message from all processed jobs\nconst jobs = $input.first().json.jobs || [];\nconst today = new Date().toISOString().split('T')[0];\n\n// Sort by relevance score descending, take top 5\nconst sorted = [...jobs]\n  .filter(j => j.title && j.title !== 'No jobs found')\n  .sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0))\n  .slice(0, 5);\n\nlet msg = `🔍 *Weekly Job Report — ${today}*\\n`;\nmsg += `Found *${jobs.filter(j => j.title && j.title !== 'No jobs found').length}* matching jobs across 3 searches.\\n\\n`;\n\nif (sorted.length === 0) {\n  msg += '_No jobs parsed this run — LinkedIn may have rate-limited. Try again later._\\n';\n} else {\n  msg += `*Top ${sorted.length} Matches:*\\n\\n`;\n  sorted.forEach((j, i) => {\n    msg += `${i + 1}. *${j.title}*\\n`;\n    msg += `   _${j.company}_ • ${j.location}\\n`;\n    if (j.match_assessment) msg += `   💡 ${j.match_assessment}\\n`;\n    if (j.job_url) msg += `   🔗 ${j.job_url}\\n`;\n    msg += '\\n';\n  });\n}\n\nmsg += `📊 Full details + tailored resumes in your Google Sheet.\\n`;\nmsg += `\\nReply *top* to your job bot to query anytime.`;\n\nreturn [{\n  json: {\n    // ── EDIT: replace with your WhatsApp number (with country code, no +)\n    to_number: 'whatsapp:+YOUR_WHATSAPP_NUMBER',\n    from_number: 'whatsapp:+14155238886',\n    message_text: msg\n  }\n}];"
+      },
+      "name": "Format WhatsApp Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2180, 580],
+      "id": "dd000012-0000-0000-0000-000000000012"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.twilio.com/2010-04-01/Accounts/{{ $credentials.twilioApi.accountSid }}/Messages.json",
+        "sendHeaders": false,
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "From", "value": "={{ $json.from_number }}" },
+            { "name": "To",   "value": "={{ $json.to_number }}" },
+            { "name": "Body", "value": "={{ $json.message_text }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Send WhatsApp Notification",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [2400, 580],
+      "id": "dd000013-0000-0000-0000-000000000013",
+      "credentials": {
+        "twilioApi": { "id": "SET_YOUR_TWILIO_CREDENTIAL_ID", "name": "Twilio account" }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Schedule":       { "main": [[{ "node": "Profile & Search Config", "type": "main", "index": 0 }]] },
+    "Profile & Search Config": { "main": [[{ "node": "Fetch LinkedIn Jobs",    "type": "main", "index": 0 }]] },
+    "Fetch LinkedIn Jobs":   { "main": [[{ "node": "Parse & Score Jobs",       "type": "main", "index": 0 }]] },
+    "Parse & Score Jobs": {
+      "main": [[
+        { "node": "Sheet 1: Jobs Found", "type": "main", "index": 0 },
+        { "node": "Build AI Prompt",     "type": "main", "index": 0 }
+      ]]
+    },
+    "Build AI Prompt":   { "main": [[{ "node": "AI Resume Tailor",   "type": "main", "index": 0 }]] },
+    "AI Resume Tailor":  { "main": [[{ "node": "Parse AI Response",  "type": "main", "index": 0 }]] },
+    "Parse AI Response": {
+      "main": [[
+        { "node": "Sheet 2: Tailored Resumes",    "type": "main", "index": 0 },
+        { "node": "Sheet 3: Application Tracker", "type": "main", "index": 0 },
+        { "node": "Collect All Jobs",             "type": "main", "index": 0 }
+      ]]
+    },
+    "Collect All Jobs":        { "main": [[{ "node": "Format WhatsApp Summary",     "type": "main", "index": 0 }]] },
+    "Format WhatsApp Summary": { "main": [[{ "node": "Send WhatsApp Notification",  "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["jobs", "linkedin", "ai", "resume", "google-sheets", "whatsapp", "twilio"],
+  "meta": {
+    "description": "Weekly job pipeline + WhatsApp summary notification. After writing all 3 sheets, collects results and sends a top-5 job summary to your WhatsApp via Twilio. SETUP: (1) Google Sheets ID in nodes 5,9,10. (2) OpenAI key in node 7. (3) Google Sheets OAuth credential in nodes 5,9,10. (4) Twilio credential in node 13. (5) Replace YOUR_WHATSAPP_NUMBER in Format WhatsApp Summary node with your number (e.g. 254712345678). (6) Use Twilio sandbox from_number +14155238886 for testing, your Twilio number for production."
+  }
+}

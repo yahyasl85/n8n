@@ -1,0 +1,121 @@
+{
+  "name": "LinkedIn Profile Extractor",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "id": "aa000001-0000-0000-0000-000000000001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "url-1",
+              "name": "profileUrl",
+              "value": "https://www.linkedin.com/in/YOUR-USERNAME-HERE",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Profile URL",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300],
+      "id": "aa000002-0000-0000-0000-000000000002"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.profileUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.5"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "name": "Fetch Profile Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "id": "aa000003-0000-0000-0000-000000000003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const html = $input.first().json.data || '';\nconst url = $input.first().json.$response?.request?.url || '';\n\nconst result = {\n  profile_url: url,\n  name: null,\n  headline: null,\n  location: null,\n  about: null,\n  current_company: null,\n  current_title: null,\n  profile_image: null,\n  experience: [],\n  education: [],\n  skills: [],\n  certifications: [],\n  languages: [],\n  raw_schema: null\n};\n\n// --- 1. Extract JSON-LD structured data (most reliable) ---\nconst jsonLdMatch = html.match(/<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/);\nif (jsonLdMatch) {\n  try {\n    const schema = JSON.parse(jsonLdMatch[1]);\n    result.raw_schema = schema;\n    result.name = schema.name || null;\n    result.headline = schema.jobTitle || null;\n    result.current_company = schema.worksFor?.name || null;\n    result.profile_image = schema.image || null;\n\n    if (Array.isArray(schema.alumniOf)) {\n      result.education = schema.alumniOf.map(edu => ({\n        school: edu.name || null,\n        url: edu.url || null\n      }));\n    }\n\n    if (Array.isArray(schema.hasCredential)) {\n      result.certifications = schema.hasCredential.map(c => ({\n        name: c.name || null,\n        issuer: c.recognizedBy?.name || null\n      }));\n    }\n  } catch (e) {\n    // JSON-LD parse failed, continue with HTML fallback\n  }\n}\n\n// --- 2. HTML fallback: name ---\nif (!result.name) {\n  const nameMatch = html.match(/<title>([^|<]+)/);\n  result.name = nameMatch ? nameMatch[1].trim() : null;\n}\n\n// --- 3. HTML fallback: headline ---\nif (!result.headline) {\n  const hlMatch = html.match(/class=\"[^\"]*top-card-layout__headline[^\"]*\"[^>]*>([^<]+)</);\n  result.headline = hlMatch ? hlMatch[1].trim() : null;\n}\n\n// --- 4. HTML fallback: location ---\nconst locMatch = html.match(/class=\"[^\"]*top-card__subline-item[^\"]*\"[^>]*>([^<]+)</);\nif (locMatch) result.location = locMatch[1].trim();\n\n// --- 5. HTML fallback: about/summary ---\nconst aboutMatch = html.match(/class=\"[^\"]*core-section-container__content[^\"]*\"[\\s\\S]*?<p[^>]*>([\\s\\S]*?)<\\/p>/);\nif (aboutMatch) {\n  result.about = aboutMatch[1].replace(/<[^>]+>/g, '').trim();\n}\n\n// --- 6. Experience entries ---\nconst expSection = html.match(/id=\"experience\"[\\s\\S]*?(<section[\\s\\S]*?<\\/section>)/);\nif (expSection) {\n  const expItems = expSection[1].split(/<li[^>]*>/).slice(1);\n  for (const item of expItems) {\n    const expTitle = item.match(/class=\"[^\"]*experience-item__title[^\"]*\"[^>]*>([^<]+)</);\n    const expCompany = item.match(/class=\"[^\"]*experience-item__subtitle[^\"]*\"[^>]*>([^<]+)</);\n    const expDates = item.match(/class=\"[^\"]*experience-item__duration[^\"]*\"[^>]*>([^<]+)</);\n    const expLocation = item.match(/class=\"[^\"]*experience-item__location[^\"]*\"[^>]*>([^<]+)</);\n    const expDesc = item.match(/class=\"[^\"]*experience-item__description[^\"]*\"[^>]*>([\\s\\S]*?)<\\/p>/);\n\n    if (expTitle || expCompany) {\n      result.experience.push({\n        title: expTitle ? expTitle[1].trim() : null,\n        company: expCompany ? expCompany[1].trim() : null,\n        duration: expDates ? expDates[1].trim() : null,\n        location: expLocation ? expLocation[1].trim() : null,\n        description: expDesc ? expDesc[1].replace(/<[^>]+>/g, '').trim() : null\n      });\n    }\n  }\n}\n\n// --- 7. Skills ---\nconst skillMatches = html.matchAll(/class=\"[^\"]*skill-card-component__display-name[^\"]*\"[^>]*>([^<]+)</);\nfor (const m of skillMatches) {\n  result.skills.push(m[1].trim());\n}\n\n// --- 8. Languages ---\nconst langSection = html.match(/id=\"languages\"[\\s\\S]*?(<section[\\s\\S]*?<\\/section>)/);\nif (langSection) {\n  const langMatches = langSection[1].matchAll(/class=\"[^\"]*language-card__name[^\"]*\"[^>]*>([^<]+)</);\n  for (const m of langMatches) {\n    result.languages.push(m[1].trim());\n  }\n}\n\nreturn [{ json: result }];"
+      },
+      "name": "Parse Profile Elements",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "id": "aa000004-0000-0000-0000-000000000004"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Profile URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Profile URL": {
+      "main": [
+        [
+          {
+            "node": "Fetch Profile Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Profile Page": {
+      "main": [
+        [
+          {
+            "node": "Parse Profile Elements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["linkedin", "profile", "extraction"],
+  "meta": {
+    "description": "Extracts elements from a public LinkedIn profile page. Replace YOUR-USERNAME-HERE in the Profile URL node with your actual LinkedIn username. Extracted fields: name, headline, location, about, current_company, current_title, profile_image, experience[], education[], skills[], certifications[], languages[]. Uses JSON-LD structured data first, then HTML fallback selectors."
+  }
+}
